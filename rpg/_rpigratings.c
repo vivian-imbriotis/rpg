@@ -23,14 +23,15 @@
 #define ANGLE_270 -4
 #define SINE 1
 #define SQUARE 0
-
+#define RGB888MODE 1
+#define RGB565MODE 0
 
 #define DEGREES_SUBTENDED 80 //The degrees of visual angle
 			     // subtended by the screen
 
 typedef struct {
 	int framebuffer;
-	uint16_t * map;
+	void * map;
 	unsigned int width;
 	unsigned int height;
 	unsigned int depth; //bits per pixel,
@@ -48,6 +49,7 @@ typedef struct {
 	uint16_t temporal_frequency;
 	uint16_t frames_per_second;
 	uint16_t n_frames;
+	uint16_t _padding;
 }fileheader_t;
 
 typedef struct {
@@ -59,12 +61,32 @@ typedef struct {
 	long int n_frames;
 } fileheader_raw;
 
+typedef struct {
+	uint8_t red;
+	uint8_t blue;
+	uint8_t green;
+} uint24_t;
+//WARNING: this is just a convenience type, the logic for performing
+//integer arythmatic has NOT been implemented. Use at your own risk.
+
+
+
 uint16_t rgb_to_uint(int red, int green, int blue){
 	/*Convert an rgb value to a 16bit, RGB565
 	value*/
 	return  (((31*(red + 4))/255)<<11)|
 		(((63*(green+2))/255)<< 5)|
 		 ((31*(blue +4))/255);
+}
+
+uint24_t rgb_to_uint_24bit(int red, int green, int blue){
+	/*Convert an rgb value to a 24bit, RBG888
+	value.*/
+	uint24_t result;
+	result.red = red;
+	result.green = green;
+	result.blue = blue;
+	return result;
 }
 
 int gcd(int a, int b){
@@ -227,7 +249,7 @@ void flip_buffer(int buffer_num, fb_config fb0){
 }
 
 
-uint16_t squarewave(int x, int y, int t, int wavelength, int speed, double angle, double cosine, double sine, double weight, double contrast, int background){
+void* squarewave(int x, int y, int t, int wavelength, int speed, double angle, double cosine, double sine, double weight, double contrast, int background, int colormode){
 	//Returns a (x,y) pixel's brightness for a squarewave
 	unsigned short black = 0;
 	unsigned short white = 255;
@@ -251,14 +273,27 @@ uint16_t squarewave(int x, int y, int t, int wavelength, int speed, double angle
 	} else {
 		brightness = black;
 	}
-	brightness = contrast * weight * (127 - brightness) + 127;
 
-	return rgb_to_uint(brightness, brightness, brightness);
+	brightness = contrast * weight * (127 - brightness) + 127;
+	void* pixel_ptr;
+	if(colormode==RGB888MODE){
+		uint24_t* pixel_ptr_24 = malloc(sizeof(uint24_t));
+		*pixel_ptr_24 = rgb_to_uint_24bit(brightness, brightness, brightness);
+		pixel_ptr = pixel_ptr_24;
+	}
+	else{
+		uint16_t* pixel_ptr_16 = malloc(sizeof(uint16_t));
+		*pixel_ptr_16 = rgb_to_uint(brightness, brightness, brightness);
+		pixel_ptr = pixel_ptr_16;
+	}
+	return pixel_ptr;
 }
 
 
 
-uint16_t sinewave(int x, int y, int t, int wavelength, int speed, double angle, double cosine, double sine, double weight, double contrast, int background){
+
+
+void* sinewave(int x, int y, int t, int wavelength, int speed, double angle, double cosine, double sine, double weight, double contrast, int background, int colormode){
 	//Returns a (x,y) pixel's brightness for a sine wave
 	double brightness;
 	double x_prime;
@@ -276,10 +311,22 @@ uint16_t sinewave(int x, int y, int t, int wavelength, int speed, double angle, 
 
 	brightness = contrast * weight * 127 * sin(2*M_PI*(x_prime)/wavelength) + 127;
 
-	return rgb_to_uint(brightness,brightness,brightness);
+	void* pixel_ptr;
+	if(colormode==RGB888MODE){
+		uint24_t* pixel_ptr_24 = malloc(sizeof(uint24_t));
+		*pixel_ptr_24 = rgb_to_uint_24bit(brightness, brightness, brightness);
+		pixel_ptr = pixel_ptr_24;
+	}
+	else{
+		uint16_t* pixel_ptr_16 = malloc(sizeof(uint16_t));
+		*pixel_ptr_16 = rgb_to_uint(brightness, brightness, brightness);
+		pixel_ptr = pixel_ptr_16;
+	}
+	return pixel_ptr;
 }
 
-uint16_t gabor(int x, int y, int t, int wavelength, int speed, double angle, double cosine, double sine, double weight, double contrast, int background) {
+
+void* gabor(int x, int y, int t, int wavelength, int speed, double angle, double cosine, double sine, double weight, double contrast, int background, int colormode) {
         //Returns a (x,y) pixel's brightness for a gabor patch
         double brightness, x_prime, amplitude;
 
@@ -301,11 +348,25 @@ uint16_t gabor(int x, int y, int t, int wavelength, int speed, double angle, dou
           amplitude = contrast * weight * (255 - background);
         }
         brightness = amplitude * sin(2*M_PI*(x_prime)/wavelength) + background;
-        return rgb_to_uint(brightness,brightness,brightness);
+	void* pixel_ptr;
+	if(colormode==RGB888MODE){
+		uint24_t* pixel_ptr_24 = malloc(sizeof(uint24_t));
+		*pixel_ptr_24 = rgb_to_uint_24bit(brightness, brightness, brightness);
+		pixel_ptr = pixel_ptr_24;
+	}
+	else{
+		uint16_t* pixel_ptr_16 = malloc(sizeof(uint16_t));
+		*pixel_ptr_16 = rgb_to_uint(brightness, brightness, brightness);
+		pixel_ptr = pixel_ptr_16;
+	}
+	return pixel_ptr;
 }
 
 
-uint16_t * build_frame(int t, double angle, fb_config framebuffer, int wavelength, int speed, int waveform, double contrast, int background, int center_j, int center_i, int sigma, int radius, int padding){
+
+void * build_frame(int t, double angle, fb_config framebuffer, int wavelength, int speed, int waveform, 
+			double contrast, int background, int center_j, int center_i, int sigma, int radius, int padding,
+			int colormode){
 	angle = ((int)(angle)%360 + 360)%360;
 	if(angle==0){
 		angle = ANGLE_0;
@@ -324,58 +385,81 @@ uint16_t * build_frame(int t, double angle, fb_config framebuffer, int wavelengt
 	}
 	double sine = sin(angle);
 	double cosine = cos(angle);
-	uint16_t * array_start;
+	void* array_start;
 	array_start = malloc(framebuffer.size);
-	uint16_t* write_location = array_start;
+	uint24_t * write_location_24 = array_start;
+	uint16_t* write_location_16 = array_start;
 	int i,j;
 	for(i=0;i<framebuffer.height;i++){ //for each row of pixels
 		for(j=0;j<framebuffer.width;j++){ //for each column of pixels
 			//set each pixel's brightness
 			if( radius == 0 && sigma == 0) { //if we have no radius or sigma and are doing fullscreen
-				if(waveform==SQUARE){
-					*write_location = squarewave(j,i,t,wavelength,speed,angle,cosine,sine, 1, contrast, background);
-				}else if(waveform==SINE){
-					*write_location = sinewave(j,i,t,wavelength,speed,angle,cosine,sine, 1, contrast, background);
+				if(waveform==SQUARE && colormode == RGB888MODE) {
+					*write_location_24 = * (uint24_t *)(squarewave(j,i,t,wavelength,speed,angle,cosine,sine, 1, contrast, background,colormode));
+				}else if(waveform==SQUARE && colormode == RGB565MODE){
+					*write_location_16 = * (uint16_t *)(squarewave(j,i,t,wavelength,speed,angle,cosine,sine, 1, contrast, background,colormode));
+				}else if(waveform==SINE && colormode == RGB888MODE) {
+					*write_location_24 = * (uint24_t *)(sinewave(j,i,t,wavelength,speed,angle,cosine,sine, 1, contrast, background,colormode));
+				}else{  //we must be in 16-bit, rbg565 mode, and doing a sinewave
+					*write_location_16 = * (uint16_t *)(sinewave(j,i,t,wavelength,speed,angle,cosine,sine, 1, contrast, background,colormode));
 				}
 			} else if (sigma == 0) { //if sigma == 0 then we're doing a circle  and hence aren't doing full screen
 	                        int point_radius = (int) sqrt( ((j-center_j) * (j-center_j)) + ((i-center_i) * (i-center_i)) );
 				if( point_radius > radius + padding) { //if we are outside the circular mask
-					*write_location = rgb_to_uint(background,background,background);
+					if(colormode==RGB888MODE){
+						*write_location_24 = rgb_to_uint_24bit(background,background,background);
+					}else{
+						*write_location_16 = rgb_to_uint(background,background,background);
+					}
 				}else if( point_radius <= radius) { //if we are inside the central radius
-					if(waveform==SQUARE) {
-						*write_location = squarewave(j,i,t,wavelength,speed,angle,cosine,sine, 1, contrast, background);
-					}else if(waveform==SINE) {
-						*write_location = sinewave(j,i,t,wavelength,speed,angle,cosine,sine, 1, contrast, background);
+					if(waveform==SQUARE && colormode == RGB888MODE) {
+						*write_location_24 = * (uint24_t *)(squarewave(j,i,t,wavelength,speed,angle,cosine,sine, 1, contrast, background,colormode));
+					}else if(waveform==SQUARE && colormode == RGB565MODE){
+						*write_location_16 = * (uint16_t *)(squarewave(j,i,t,wavelength,speed,angle,cosine,sine, 1, contrast, background,colormode));
+					}else if(waveform==SINE && colormode == RGB888MODE) {
+						*write_location_24 = * (uint24_t *)(sinewave(j,i,t,wavelength,speed,angle,cosine,sine, 1, contrast, background,colormode));
+					}else{  //we must be in 16-bit, rbg565 mode, and doing a sinewave
+						*write_location_16 = * (uint16_t *)(sinewave(j,i,t,wavelength,speed,angle,cosine,sine, 1, contrast, background,colormode));
 					}
 				} else { //we must be in the padding region
 					double weight = (radius + padding - point_radius) / padding;
-					if(waveform==SQUARE) {
-						*write_location = squarewave(j,i,t,wavelength,speed,angle,cosine,sine, weight, contrast, background);
-					}else if (waveform==SINE){
-						*write_location = sinewave(j,i,t,wavelength,speed,angle,cosine,sine, weight, contrast, background);
+					if(waveform==SQUARE && colormode == RGB888MODE) {
+						*write_location_24 = * (uint24_t *)(squarewave(j,i,t,wavelength,speed,angle,cosine,sine, weight, contrast, background,colormode));
+					}else if(waveform==SQUARE && colormode == RGB565MODE){
+						*write_location_16 = * (uint16_t *)(squarewave(j,i,t,wavelength,speed,angle,cosine,sine, weight, contrast, background,colormode));
+					}else if(waveform==SINE && colormode == RGB888MODE) {
+						*write_location_24 = * (uint24_t *)(sinewave(j,i,t,wavelength,speed,angle,cosine,sine, weight, contrast, background,colormode));
+					}else{  //we must be in 16-bit, rbg565 mode, and doing a sinewave
+						*write_location_16 = * (uint16_t *)(sinewave(j,i,t,wavelength,speed,angle,cosine,sine, weight, contrast, background,colormode));
 					}
 				}
 			} else { //we must be doing a gabor
                                 int point_radius = (int) sqrt( ((j-center_j) * (j-center_j)) + ((i-center_i) * (i-center_i)) );
 				double weight = gaussian(point_radius, sigma);
-	                        //you can't do a squarewave gabor. I do not permit such abominations.
-        	                *write_location = gabor(j,i,t,wavelength,speed,angle,cosine,sine, weight, contrast, background);
+	                        //you can't do a squarewave gabor. I do not permit such abominations.					
+				if(colormode == RGB888MODE) {
+					*write_location_24 = * (uint24_t *)(gabor(j,i,t,wavelength,speed,angle,cosine,sine, weight, contrast, background,colormode));
+				}else{
+					*write_location_16 = * (uint16_t *)(gabor(j,i,t,wavelength,speed,angle,cosine,sine, weight, contrast, background,colormode));
+				}
+
 			}
-			write_location++;
+			write_location_24++;
+			write_location_16++;
 		}
 	}
 	//and return a pointer to this pixel data
-	return array_start;
+	return (void *)array_start;
 }
 
-
-int build_grating(char * filename, double duration, double angle, double sf, double tf, double contrast, int background, int width, int height, int waveform, double percent_sigma, double percent_diameter, double percent_center_left, double percent_center_top, double percent_padding){
+int build_grating(char * filename, double duration, double angle, double sf, double tf, double contrast, int background, int width, int height, int waveform, double 
+	percent_sigma, double percent_diameter, double percent_center_left, double percent_center_top, double percent_padding, int colormode){ 
 	int fps = get_refresh_rate();
         printf("Refresh rate measured as: %d hz\n", fps);
 	fb_config fb0;
 	fb0.width = width;
 	fb0.height = height;
-	fb0.depth = 16;
+	fb0.depth = (colormode==RGB888MODE)?24:16;
 	fb0.size = (fb0.height)*(fb0.depth)*(fb0.width)/8;
 	FILE * file = fopen(filename, "wb");
 	if(file == NULL){
@@ -416,10 +500,20 @@ int build_grating(char * filename, double duration, double angle, double sf, dou
 	if(clock_status){
 		return -1;
 	}
+	uint24_t * frame_24;
+	uint16_t * frame_16;
 	for (t=0;t<header.frames_per_cycle;t++){
-		uint16_t* frame = build_frame(t,angle,fb0,wavelength, speed, waveform, contrast, background, center_j, center_i, sigma, radius, padding);
-		fwrite(frame,sizeof(uint16_t),fb0.height*fb0.width,file);
-		free(frame);
+		if(colormode == RGB888MODE){
+			* frame_24 = * (uint24_t *) build_frame(t,angle,fb0,wavelength, speed, waveform, contrast, background, center_j, center_i, sigma, radius, padding, colormode);
+			fwrite(frame_24,sizeof(*frame_24),fb0.height*fb0.width,file);
+			free(frame_24);
+		}else{
+			* frame_16 = * (uint16_t *) build_frame(t,angle,fb0,wavelength, speed, waveform, contrast, background, center_j, center_i, sigma, radius, padding, colormode);
+			fwrite(frame_16,sizeof(*frame_16),fb0.height*fb0.width,file);
+			free(frame_16);
+		}
+		frame_24++;
+		frame_16++;
 		if(t==4){
 			time2 = get_current_time(&clock_status);
 			if(clock_status){
@@ -432,11 +526,11 @@ int build_grating(char * filename, double duration, double angle, double sf, dou
 	return 0;
 }
 
-uint16_t* load_grating(char* filename, fb_config fb0){
+void* load_grating(char* filename, fb_config fb0){
 	int page_size = getpagesize();
 	int bytes_already_read = 0;
 	int read_size,frames;
-
+	int colormode = (fb0.depth==24)?RGB888MODE:RGB565MODE;
 	int filedes = open(filename, O_RDWR);
 	if(filedes == -1){
 		perror("Failed to open file");
@@ -459,25 +553,33 @@ uint16_t* load_grating(char* filename, fb_config fb0){
 	//clean up the header from the heap
 	munmap(header, 6);
 	//now copy file_size bytes across using mmap
+	uint24_t *frame_data_24 = malloc(file_size);
 	uint16_t *frame_data = malloc(file_size);
 	while(bytes_already_read < file_size){
 		read_size = 20000*page_size;
 		if(read_size + bytes_already_read >= file_size){
 			read_size = file_size - bytes_already_read;
 		}
-		uint16_t *mmap_start = mmap(NULL, read_size,PROT_READ,MAP_PRIVATE,
+		void* mmap_start = mmap(NULL, read_size,PROT_READ,MAP_PRIVATE,
 						filedes,bytes_already_read);
 		if(mmap_start == MAP_FAILED){
 			perror("From MMAP attempt to read");
 			exit(1);
 		}
 		//Copy read_size bytes across
-		memcpy(frame_data+(bytes_already_read/2),mmap_start,read_size);
+		if(colormode == RGB888MODE){
+			memcpy(frame_data_24+(bytes_already_read/sizeof(*frame_data_24)),mmap_start,read_size);
+		}else{
+			memcpy(frame_data+(bytes_already_read/sizeof(*frame_data)),mmap_start,read_size);
+		}
 		bytes_already_read += read_size;
 		munmap(mmap_start,read_size);
 	}
 	close(filedes);
-	return frame_data;
+	if(colormode == RGB888MODE){
+		return (void *) frame_data_24;
+	}
+	return (void*) frame_data;
 }
 
 
@@ -623,7 +725,7 @@ double* display_raw(uint16_t *frame_data, fb_config fb0, int trig_pin) {
 	return frame_duration_mean;
 }
 
-double* display_grating(uint16_t* frame_data, fb_config fb0, int trig_pin){
+double* display_grating(void* frame_data, fb_config fb0, int trig_pin, int colormode){
 
 	pinMode(1, OUTPUT);
 	digitalWrite(1, LOW);
@@ -637,11 +739,18 @@ double* display_grating(uint16_t* frame_data, fb_config fb0, int trig_pin){
 	}
 
 	fileheader_t* header = frame_data;
-	frame_data += sizeof(fileheader_t)/sizeof(uint16_t);
+	frame_data = ((uint16_t *)(frame_data)) + sizeof(fileheader_t)/sizeof(uint16_t);
+	uint24_t * frame_data_24;
+	uint16_t * frame_data_16;
+	frame_data_24 = frame_data_16 = frame_data;
 
-	uint16_t *write_loc;
+
+	uint24_t * write_loc_24;
+	uint16_t * write_loc_16;
+	write_loc_24 = fb0.map + fb0.size/sizeof(* write_loc_24);
+	write_loc_16 = fb0.map + fb0.size/sizeof(* write_loc_16);
+
 	int t, buffer, pixel, frame, clock_status;
-	write_loc = fb0.map + fb0.size/2;
 	float* frame_duration_mean = malloc(2*sizeof(float));
 	float* frame_duration_std = frame_duration_mean+1;
 	struct timespec frame_start, frame_end;
@@ -658,9 +767,20 @@ double* display_grating(uint16_t* frame_data, fb_config fb0, int trig_pin){
 
 		frame = t%(header->frames_per_cycle);
 		buffer = (t+1)%2;
-		for(pixel = 0; pixel<fb0.size/2; pixel++){
-			*write_loc = frame_data[(frame*fb0.size/2)+pixel];
-			write_loc++;
+		int pixel_size;
+		if (colormode == RGB888MODE){
+			pixel_size = sizeof(uint24_t);
+		}else{
+			pixel_size = sizeof(uint16_t);
+		}
+		for(pixel = 0; pixel<fb0.size/pixel_size; pixel++){
+			if(colormode == RGB888MODE){
+				*write_loc_24 = frame_data_24[(frame*fb0.size/sizeof(*frame_data_24))+pixel];
+				write_loc_24++;
+			}else{
+				*write_loc_16 = frame_data_16[(frame*fb0.size/sizeof(*frame_data_16))+pixel];
+				write_loc_16++;
+			}
 		}
 
 		flip_buffer(buffer, fb0);
@@ -672,9 +792,11 @@ double* display_grating(uint16_t* frame_data, fb_config fb0, int trig_pin){
 
 		if(!buffer){
 			digitalWrite(1, LOW);
-			write_loc = fb0.map + fb0.size/2;
+			write_loc_24 = fb0.map + fb0.size/sizeof(* write_loc_24);
+			write_loc_16 = fb0.map + fb0.size/sizeof(* write_loc_16);
 		} else {
-			write_loc = fb0.map;
+			write_loc_24 = fb0.map;
+			write_loc_16 = fb0.map;
 			digitalWrite(1, HIGH);
 		}
 	}
@@ -735,7 +857,7 @@ int is_current_resolution(int xres, int yres){
 }
 
 
-fb_config init(int width, int height){
+fb_config init(int width, int height, int colormode){
 	wiringPiSetup();
 
 	fb_config fb0;
@@ -775,12 +897,16 @@ fb_config init(int width, int height){
 	fb0.orig_depth = (int)(property[10]);
 	fb0.width = width;
 	fb0.height = height;
-	fb0.depth = 16;
+	if(colormode == RGB888MODE){
+		fb0.depth = 24;
+	}else{
+		fb0.depth = 16;
+	}
 	fb0.size = (fb0.height)*(fb0.depth)*(fb0.width)/8;
 	char fbset_str[80];
 	sprintf(fbset_str,
-		"fbset -xres %d -yres %d -vxres %d -vyres %d -depth 16",
-		fb0.width, fb0.height, fb0.width, 2*fb0.height);
+		"fbset -xres %d -yres %d -vxres %d -vyres %d -depth %d",
+		fb0.width, fb0.height, fb0.width, 2*fb0.height, fb0.depth);
 	if(system(fbset_str)){
 		PyErr_SetString(PyExc_OSError,"Call to fbset subroutine failed.");
 		fb0.error = 1;
@@ -813,7 +939,7 @@ fb_config init(int width, int height){
 		fb0.error = 1;
 		return fb0;
 	}
-	fb0.map = (uint16_t *)(mmap(0,2*fb0.size,PROT_READ|PROT_WRITE, MAP_SHARED, fb0.framebuffer, 0));
+	fb0.map = mmap(0,2*fb0.size,PROT_READ|PROT_WRITE, MAP_SHARED, fb0.framebuffer, 0);
 	if (fb0.map == MAP_FAILED){
 		PyErr_SetString(PyExc_OSError,"Attempt to mmap /dev/fb0 device failed");
 		fb0.error = 1;
@@ -848,16 +974,16 @@ static PyObject* py_buildgrating(PyObject *self, PyObject *args) {
     char* filename;
     double duration, angle, sf, tf, contrast, percent_sigma, percent_diameter,
            percent_center_left, percent_center_top, percent_padding;
-    int width, height, waveform, background;
-    if (!PyArg_ParseTuple(args, "sdddddiiiiddddd", &filename, &duration, &angle,
+    int width, height, waveform, background, colormode;
+    if (!PyArg_ParseTuple(args, "sdddddiiiidddddi", &filename, &duration, &angle,
                           &sf, &tf, &contrast, &background, &width, &height, &waveform,
                           &percent_sigma, &percent_diameter, &percent_center_left,
-			  &percent_center_top, &percent_padding)){
+			  &percent_center_top, &percent_padding,&colormode)){
         return NULL;
     }
     if(build_grating(filename,duration,angle,sf,tf,contrast,background,width,height,waveform,
 			percent_sigma, percent_diameter,percent_center_left,
-			percent_center_top, percent_padding)){
+			percent_center_top, percent_padding,colormode)){
         return NULL;
     }
     Py_RETURN_NONE;
@@ -866,12 +992,12 @@ static PyObject* py_buildgrating(PyObject *self, PyObject *args) {
 
 
 static PyObject* py_init(PyObject *self, PyObject *args) {
-    int xres,yres;
-    if (!PyArg_ParseTuple(args, "ii", &xres, &yres)) {
+    int xres,yres,colormode;
+    if (!PyArg_ParseTuple(args, "iii", &xres, &yres,&colormode)) {
         return NULL;
     }
     fb_config* fb0_pointer = malloc(sizeof(fb_config)); 
-    *fb0_pointer = init(xres,yres);
+    *fb0_pointer = init(xres,yres,colormode);
     if(fb0_pointer->error){
         return NULL;
     }
@@ -900,7 +1026,7 @@ static PyObject* py_loadgrating(PyObject* self, PyObject* args){
         return NULL;
     }
     fb_config* fb0_pointer = PyCapsule_GetPointer(fb0_capsule,"framebuffer");
-    uint16_t* grating_data = load_grating(filename,*fb0_pointer);
+    void* grating_data = load_grating(filename,*fb0_pointer);
     if (grating_data == NULL) {
         PyErr_Format(PyExc_FileNotFoundError, "You probably mistyped the file name. Parsed as %s", filename);
  	return NULL;
@@ -957,12 +1083,18 @@ static PyObject* py_displaygrating(PyObject* self, PyObject* args){
         return NULL;
     }
     fb_config* fb0_pointer = PyCapsule_GetPointer(fb0_capsule,"framebuffer");
-    uint16_t* grating_data = PyCapsule_GetPointer(grating_capsule,"grating_data");
+    void* grating_data = PyCapsule_GetPointer(grating_capsule,"grating_data");
+    int colormode;
+    if(fb0_pointer->depth==24){
+        colormode = RGB888MODE;
+    }else{
+        colormode = RGB565MODE;
+    }
     if(grating_data == NULL){
         return NULL;
     }
     int start_time = time(NULL);
-    float* grat_info = display_grating(grating_data,*fb0_pointer,trig_pin);
+    float* grat_info = display_grating(grating_data,*fb0_pointer,trig_pin,colormode);
     if (grat_info == 0) {
         free(grat_info);
         Py_RETURN_NONE;
