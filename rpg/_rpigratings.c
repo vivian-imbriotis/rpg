@@ -386,6 +386,7 @@ void * build_frame(int t, double angle, fb_config framebuffer, int wavelength, i
 	double sine = sin(angle);
 	double cosine = cos(angle);
 	void* array_start;
+	printf("Mallocing %d bytes for the frame\n",framebuffer.size);
 	array_start = malloc(framebuffer.size);
 	uint24_t * write_location_24 = array_start;
 	uint16_t* write_location_16 = array_start;
@@ -448,6 +449,7 @@ void * build_frame(int t, double angle, fb_config framebuffer, int wavelength, i
 			write_location_16++;
 		}
 	}
+	printf("attempting to return from frame constructor\n");
 	//and return a pointer to this pixel data
 	return (void *)array_start;
 }
@@ -500,20 +502,16 @@ int build_grating(char * filename, double duration, double angle, double sf, dou
 	if(clock_status){
 		return -1;
 	}
-	uint24_t * frame_24;
-	uint16_t * frame_16;
+	uint24_t * frame_24 = malloc(fb0.size);
+	uint16_t * frame_16 = malloc(fb0.size);
 	for (t=0;t<header.frames_per_cycle;t++){
+		printf("Debugging: frame %d\n",t);
 		if(colormode == RGB888MODE){
 			* frame_24 = * (uint24_t *) build_frame(t,angle,fb0,wavelength, speed, waveform, contrast, background, center_j, center_i, sigma, radius, padding, colormode);
 			fwrite(frame_24,sizeof(*frame_24),fb0.height*fb0.width,file);
-			free(frame_24);
 		}else{
 			* frame_16 = * (uint16_t *) build_frame(t,angle,fb0,wavelength, speed, waveform, contrast, background, center_j, center_i, sigma, radius, padding, colormode);
-			fwrite(frame_16,sizeof(*frame_16),fb0.height*fb0.width,file);
-			free(frame_16);
-		}
-		frame_24++;
-		frame_16++;
+			fwrite(frame_16,sizeof(*frame_16),fb0.height*fb0.width,file);		}
 		if(t==4){
 			time2 = get_current_time(&clock_status);
 			if(clock_status){
@@ -522,6 +520,8 @@ int build_grating(char * filename, double duration, double angle, double sf, dou
 			printf("Expected time to completion: %ld seconds\n",header.frames_per_cycle*cmp_times(time1,time2)/1000000/5);
 		}
 	}
+	free(frame_24);
+	free(frame_16);
 	fclose(file);
 	return 0;
 }
@@ -1161,8 +1161,9 @@ static PyMethodDef _rpigratings_methods[] = {
     {   
         "init", py_init, METH_VARARGS,
         "Initialise the display and return a framebuffer object.\n"
-	":Param xres: the virtual width of the display\n"
-	":Param yres: the virtual height of the display\n"
+	":Param xres:  the virtual width of the display\n"
+	":Param yres:  the virtual height of the display\n"
+	":Param depth: the number of bits per pixel - 16 or 24\n"
 	":rtype framebuffer capsule: a framebuffer object for use\n"
 	"with other functions in this module.\n"
 	"WARNING: only one instance of this object should\n"

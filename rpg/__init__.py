@@ -74,7 +74,7 @@ def build_grating(filename, options):
                               options["spac_freq"], options["temp_freq"],
                               options["contrast"], options["background"],
                               options["resolution"][0], options["resolution"][1],
-                              options["waveform"], 0, 0, 0, 0, 0)
+                              options["waveform"], 0, 0, 0, 0, 0, options["colormode"])
 
 def build_masked_grating(filename, options):
     """
@@ -119,7 +119,7 @@ def build_masked_grating(filename, options):
                               options["resolution"][0], options["resolution"][1],
                               options["waveform"], 0, options["percent_diameter"],
                               options["percent_center_left"], options["percent_center_top"],
-                              options["percent_padding"])
+                              options["percent_padding"], options["colormode"])
 
 def build_gabor(filename, options):
     """
@@ -163,7 +163,7 @@ def build_gabor(filename, options):
                               options["resolution"][0], options["resolution"][1],
                               options["waveform"], options["percent_sigma"], 0,
                               options["percent_center_left"], options["percent_center_top"],
-                              0)
+                              0, options["colormode"])
 
 
 
@@ -256,7 +256,7 @@ def convert_raw(filename, new_filename, n_frames, width, height, refreshes_per_f
 
 
 class Screen:
-    def __init__(self, resolution=(1280,720), background = 127):
+    def __init__(self, resolution=(1280,720), background = 127, colormode = 16):
         """
         A class encapsulating the raspberry pi's framebuffer,
           with methods to display drifting gratings and solid colors to
@@ -286,8 +286,15 @@ class Screen:
         if (background < 0 or background > 255):
                 raise ValueError("Background must be between 0 and 255")
 
+        if colormode in {0, 16, "565", "rgb565", "RGB565", "16"}:
+                colormode = 0
+        elif colormode in {1, 24, "888", "rgb888", "RGB888", "24"}:
+                colormode = 1
+        else:
+                raise ValueError("Colormode must be 16 or 24, not %s"%colormode.__repr__)
+
         self.background = background
-        self.capsule = rpigratings.init(resolution[0],resolution[1])
+        self.capsule = rpigratings.init(resolution[0],resolution[1], colormode)
 
 
     def load_grating(self,filename):
@@ -724,5 +731,13 @@ def _parse_options(options):
             raise ValueError("options['percent_padding'] set to invalid value of %d, must be set > 0 or not set" %op["percent_padding"])
     else:
         op["percent_padding"] = 0
+
+    if "colormode" in op:
+        if op["colormode"] in {0, 16, "rgb565", "RGB565", "565", "16"}:
+            op["colormode"] = 0
+        elif op["colormode"] in {1, 24, "24", "rgb888", "RGB888", "888"}:
+            op["colormode"] = 1
+        else:
+            raise ValueError("options['colormode'] must be 16 or 24, not %s"%op["colormode"].__repr__)
 
     return op
