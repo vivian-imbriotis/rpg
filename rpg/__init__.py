@@ -21,11 +21,16 @@ from collections import namedtuple
 
 GratPerfRec = namedtuple("GratingPerformanceRecord",["mean_interframe","stddev_interframe","start_time"])
 
-GRAY = 127
-BLACK = 0
-WHITE = 255
-SINE = 1
-SQUARE = 0
+GRAY   = 127
+BLACK  = 0
+WHITE  = 255
+SINE   = 0b0001
+SQUARE = 0b0000
+
+#These are tags passed to the C architexture to specify the bits per pixel,
+#probably don't change them unless you're confident you know what you're doing!
+RGB888MODE =  0b0010
+RGB565MODE =  0b0000
 
 import _rpigratings as rpigratings
 
@@ -226,7 +231,7 @@ def build_list_of_gratings(func_string, directory_path, options):
 
     os.chdir(cwd)
 
-def convert_raw(filename, new_filename, n_frames, width, height, refreshes_per_frame):
+def convert_raw(filename, new_filename, n_frames, width, height, refreshes_per_frame, colormode = 16):
     """
     Converts a raw video/image file saves as uint8: RGBRGBRGB... starting
       in the top left pixel and proceeding rowwise, into a form readily 
@@ -245,14 +250,19 @@ def convert_raw(filename, new_filename, n_frames, width, height, refreshes_per_f
         be 2. On a 75 Hz monitor, 25 frames per second would be acheived by setting this
         to 3. If a still image is displayed, if you require it displayed for X seconds,
         and your monitor refresh rate is R Hz, then this value should be set to X * R.
-
+      colormode: number of bits per pixel; must be 16 or 24.
     Returns:
       None
     """
-
+    if colormode in {0, 16, "rgb565", "RGB565", "565", "16"}:
+        colormode = RGB565MODE
+    elif colormode in {1, 24, "24", "rgb888", "RGB888", "888"}:
+        colormode = RGB888MODE
+    else:
+        raise ValueError("colormode must be 16 or 24, not %s"%op["colormode"].__repr__)
     filename = os.path.expanduser(filename)
     new_filename = os.path.expanduser(new_filename)
-    rpigratings.convertraw(filename, new_filename, n_frames, width, height, refreshes_per_frame)
+    rpigratings.convertraw(filename, new_filename, n_frames, width, height, refreshes_per_frame,colormode)
 
 
 class Screen:
@@ -281,7 +291,7 @@ class Screen:
         Args:
           resolution: a tuple of the desired width of the display
             resolution as (width, height). Defaults to (1280,720).
-          background: value between0 and 255 for the background 
+          background: value between 0 and 255 for the background 
          """
         if (background < 0 or background > 255):
                 raise ValueError("Background must be between 0 and 255")
@@ -289,12 +299,13 @@ class Screen:
         if colormode in {0, 16, "565", "rgb565", "RGB565", "16"}:
                 colormode = 0
         elif colormode in {1, 24, "888", "rgb888", "RGB888", "24"}:
-                colormode = 1
+                colormode = 2
         else:
                 raise ValueError("Colormode must be 16 or 24, not %s"%colormode.__repr__)
 
         self.background = background
         self.capsule = rpigratings.init(resolution[0],resolution[1], colormode)
+        self.colormode = colormode
 
 
     def load_grating(self,filename):
@@ -400,7 +411,7 @@ class Screen:
         if (color<0 or color>255):
                 self.close()
                 raise ValueError("Color must be between each between 0 and 255.")
-        rpigratings.display_color(self.capsule,color,color,color)
+        rpigratings.display_color(self.capsule,color,color,color,self.colormode)
 
     def display_gratings_randomly(self, dir_containing_gratings, intertrial_time, logfile_name="rpglog.txt"):
         """
@@ -638,23 +649,23 @@ class Screen:
 
 
 class Grating:
-	def __init__(self, master, filename):
-		if type(master).__name__ != "Screen":
-			raise ValueError("master must be a Screen instance")
-		self.master = master
-		self.capsule = rpigratings.load_grating(master.capsule,filename)
-	def __del__(self):
-		rpigratings.unload_grating(self.capsule)
+    def __init__(self, master, filename):
+        if type(master).__name__ != "Screen":
+            raise ValueError("master must be a Screen instance")
+        self.master = master
+        self.capsule = rpigratings.load_grating(master.capsule,filename)
+    def __del__(self):
+        rpigratings.unload_grating(self.capsule)
 
 
 class Raw:
-	def __init__(self, master, filename):
-		if type(master).__name__ != "Screen":
-			raise ValueError("master must be a Screen instance")
-		self.master = master
-		self.capsule = rpigratings.load_raw(filename)
-	def __del__(self):
-		rpigratings.unload_raw(self.capsule)
+    def __init__(self, master, filename):
+        if type(master).__name__ != "Screen":
+            raise ValueError("master must be a Screen instance")
+        self.master = master
+        self.capsule = rpigratings.load_raw(filename)
+    def __del__(self):
+        rpigratings.unload_raw(self.capsule)
 
 def _parse_options(options):
     """
@@ -734,10 +745,11 @@ def _parse_options(options):
 
     if "colormode" in op:
         if op["colormode"] in {0, 16, "rgb565", "RGB565", "565", "16"}:
-            op["colormode"] = 0
+            op["colormode"] = RGB565MODE
         elif op["colormode"] in {1, 24, "24", "rgb888", "RGB888", "888"}:
-            op["colormode"] = 1
+            op["colormode"] = RGB888MODE
         else:
             raise ValueError("options['colormode'] must be 16 or 24, not %s"%op["colormode"].__repr__)
-
+    else:
+        op[colormode] = RBG565MODE
     return op

@@ -55,7 +55,7 @@ class InstallWrapper(install):
         print("Try running install as sudo")
 
 setup(name='rpg',
-      version='0.1.1',
+      version='0.1.0',
       packages = ['rpg'],
       description='A drifting grating implimentation',
       ext_modules=[rpygrating_module],
